@@ -1,181 +1,216 @@
 ########################################
 # This is defines the form of the model 
 # the stress, response functions etc. 
-
 ########################################
-# The following defines how the parameters are vectorized
-#   The parameters of the model corresponds to the 
-# . exponents of the invariants for each term
 
-# How the index are determined is based on the maximum poly
-# . -nomial used, which is the top_degree
+# The parameters of the models are listed as followed
+# . c0
+# . c11 for y1^2
+# . c22 for y2^2
+# . c33 for y3^2
+# . c12 for y1-y2
+# . c13 for y1-y3^2
+# . c23 for y2-y3^2
 
-
-#### This get the vector index from the exponents
-def vectorize(top_degree, i, j, k):
-    n = (top_degree//2 + 1) 
-    # Note that this is divided by 2 because only 
-    # . even exponent k is allowed
-    n2 = (top_degree + 1) * (n)
-    return n2*i + n*j + k//2
-
-#### This recovers the exponenets from the vector index
-def find_index(top_degree, y):
-    n = (top_degree//2 + 1)
-    n2 = (top_degree + 1) * (n)
-    return y//n2, (y%n2)//n, 2*(y%n)
-
-
+# The input of the model are:
+# . y1 for gamma_1 which is the log strain along the fiber direction
+# . y2 for gamma_2 which is the log strain orthogonal to the fiber direction
+# . y3 for gamma_3 which is the shear angle
 
 
 ########################################
-# The following gives the strain energy density given a set of 
-# . parameters and vectorized index (equivalent of the exponenets)
+# Packages that are needed
+########################################
+import numpy as np
+from numpy.linalg import inv
 
-# g1 is gamma1 the first Hencky strain invariant corresponding 
-# . to the stretch in the preferred direction
-# g2 is the second invariant
-# g1 is gamma1 
-# g2 is gamma2
-# g3 is gamma3
-
-#### Gives the strain energy contribution for this terms
-def Psi(g1, g2, g3, c, y): 
-    # c is the model parameter values
-    # y is the exponent index
-    i,j,k = find_index(poly_order, y) # recovers the exponents
-    return c*(g1**i)*(g2**j)*(g3**k) 
-
-#### Gives the total strain energy contribution given a set of terms
-def strainenergy(g1, g2, g3, const, degrees):
-    
-    # const is a set of model parameter values
-    # y is a set of corresponding parameter index
-    
-    result = 0.0
-    for y in range(const.size):
-        result += Psi(g1, g2, g3, c, y)
-    return result
-
+########################################
+# Define the Kinematics
+########################################
 
 
 ########################################
-# The following gives defines the strain energy function derivatives
-# . Note here that dWX is equivalent of dW/dX, dWXY is equivalent of 
-# . d^2W/dX/dY etc.
+# Define preferred orientation
 
-# y is the parameters index of the term
+def tensor(F):
+    return np.array([[F[0], F[1]], [F[2], F[3]]])
 
-#### The following are the first derivatives other known as the 
-# . response functions
-def dW1(g1, g2, g3, y):
-    i,j,k = find_index(poly_order, y)
-    if i > 0:
-        return (i*g1**(i-1)) * (g2**j) * (g3**k)
-    return 0
+def cross_2D(M):
+    return np.array([-M[1], M[0]])
 
-def dW2(g1, g2, g3, degrees):
-    i,j,k = find_index(poly_order, degrees)
-    if j > 0:
-        return (g1**i) * (j*g2**(j-1)) * (g3**k)
-    return 0
-    
-def dW3(g1, g2, g3, degrees):
-    i,j,k = find_index(poly_order, degrees)
-    if k > 0:
-        return (g1**i) * (g2**j) * (k*g3**(k-1))
-    return 0
+def calc_m(F,M):
+    tF = tensor(F)
+    vec = tF.dot(M)
+    m = vec/np.sqrt(vec.dot(vec))
+    return m
+
+def calc_s(F,M):
+    m = calc_m(F,M)
+    return cross_2D(m)
 
 
-#### The following are the second derivatives 
-def dW11(g1, g2, g3, degrees):
-    i,j,k = find_index(poly_order, degrees)
-    if i > 1:
-        return (i * (i-1) * g1**(i-2)) * (g2**j) * (g3**k)
-    return 0
-    
-def dW22(g1, g2, g3, degrees):
-    i,j,k = find_index(poly_order, degrees)
-    if j > 1:
-        return (g1**i) * (j * (j-1) * g2**(j-2)) * (g3**k)
-    return 0
-    
-def dW33(g1, g2, g3, degrees):
-    i,j,k = find_index(poly_order, degrees)
-    if k > 1:
-        return (g1**i)*(g2**j)*(k*(k-1)*g3**(k-2))
-    return 0
+########################################
+# Define invariants
 
-    
-#### The following are the cross derivatives 
-def dW12(g1, g2, g3, degrees):
-    i,j,k = find_index(poly_order, degrees)
-    if i > 0 and j > 0:
-        return (i*g1**(i-1))*(j*g2**(j-1))*(g3**k)
-    return 0
-    
-def dW13(g1, g2, g3, degrees):
-    i,j,k = find_index(poly_order, degrees)
-    if i > 0 and k > 0:
-        return (i*g1**(i-1))*(g2**j)*(k*g3**(k-1))
-    return 0
-    
-def dW23(g1, g2, g3, degrees):
-    i,j,k = find_index(poly_order, degrees)
-    if j > 0 and k > 0:
-        return (g1**i)*(j*g2**(j-1))*(k*g3**(k-1))
-    return 0
+def lambda_M(F,M):
+    tF = tensor(F)
+    m = calc_m(F,M)
+    return m.dot(tF).dot(M)
+
+def lambda_S(F,M):
+    tF = tensor(F)
+    S = cross_2D(M)
+    s = calc_s(F,M)
+    return s.dot(tF).dot(S)
+
+def phi(F,M):
+    tF = tensor(F)
+    S = cross_2D(M)
+    m = calc_m(F,M)
+    return m.dot(tF).dot(S) / lambda_M(F,M)
+
+
+def gamma_1(F,M):
+    return np.log(lambda_M(F,M))
+
+def gamma_2(F,M):
+    return np.log(lambda_S(F,M))
+
+def gamma_3(F,M):
+    return phi(F,M)
+
+########################################
+# Define the response functions
+
+def W1_fromdat(T,F,M):
+    m = calc_m(F,M)
+    return m.dot(T).dot(m)
+
+def W2_fromdat(T,F,M):
+    s = calc_s(F,M)
+    return s.dot(T).dot(s)
+
+def W3_fromdat(T,F,M):
+    s = calc_s(F,M)
+    return m.dot(T).dot(s) * lambda_M(F,M) / lambda_S(F,M)
+
 
 
 
 
 ########################################
-# The following gives defines the response functions which is a 
-# . sum of each terms of the model with respect to the first derivatives
+# first we define the strain energy function
 
-# const is a set of model parameter values
-# degrees is a set of corresponding parameter index
+def model_Q(c, F, M):
+    y1 = gamma_1(F,M)
+    y2 = gamma_2(F,M)
+    y3 = gamma_3(F,M)
+    return np.array([c[1]*y1*y1, c[2]*y2*y2, c[3]*y3*y3, c[4]*y1*y2, c[5]*y1*y3, c[6]*y2*y3])
 
-def responseW1(g1, g2, g3, const, degrees):
-    result = 0.0
-    for y in range(const.size):
-        result += const[y]*dW1(g1,g2,g3,degrees[y])
-    return result
-
-
-def responseW2(g1, g2, g3, const, degrees):
-    result = 0.0
-    for y in range(const.size):
-        result += const[y]*dW2(g1,g2,g3,degrees[y])
-    return result
+def model_Q_s(c, F, M, ymax):
+    y1 = gamma_1(F,M)
+    y2 = gamma_2(F,M)
+    y3 = gamma_3(F,M)
+    return np.array([ c[1]*(y1*y1 - ymax[0]*ymax[0]), c[2]*(y2*y2 - ymax[1]*ymax[1]), 
+                 c[3]*(y3*y3 - ymax[2]*ymax[2]), c[4]*(y1*y2 - ymax[0]*ymax[1]), 
+                 c[5]*(y1*y3 - ymax[0]*ymax[2]), c[6]*(y2*y3 - ymax[1]*ymax[2]) ])
 
 
-def responseW3(g1, g2, g3, const, degrees):
-    result = 0.0
-    for y in range(const.size):
-        result += const[y]*dW3(g1,g2,g3,degrees[y])
-    return result
     
+def model_Q1(c, F, M):
+    y1 = gamma_1(F,M)
+    y2 = gamma_2(F,M)
+    y3 = gamma_3(F,M)
+    return np.array([ 2*c[1]*y1, 0, 0, c[4]*y2, c[5]*y3, 0 ])    
     
+def model_Q2(c, F, M):
+    y1 = gamma_1(F,M)
+    y2 = gamma_2(F,M)
+    y3 = gamma_3(F,M)
+    return np.array([ 0, 2*c[2]*y2, 0, c[4]*y1, 0, c[6]*y3 ])
     
+def model_Q3(c, F, M):
+    y1 = gamma_1(F,M)
+    y2 = gamma_2(F,M)
+    y3 = gamma_3(F,M)
+    return np.array([ 0, 0, 2*c[3]*y3, 0, c[5]*y1, c[6]*y2 ])
+
+
+
+
+def model_Psi(c, F, M):
+    Q = model_Q(c, tF)
+    ans = c[0] * ( (np.exp(Q)).sum() - 1.0 )
+#    ans = c[0] * ( np.exp(Q.sum()) - 1.0 )
+    return ans
+
+
+
+
+def model_W1(c, F, M):
+    Q = model_Q(c, F, M)
+    Q1 = model_Q1(c, F, M)
+    ans = c[0] * (Q1 * np.exp(Q)).sum()
+#    ans = c[0] * (Q1.sum() * np.exp(Q.sum()))
+    return ans
+
+def model_W2(c, F, M):
+    Q = model_Q(c, F, M)
+    Q2 = model_Q2(c, F, M)
+    ans = c[0] * (Q2 * np.exp(Q)).sum()
+#    ans = c[0] * (Q2.sum() * np.exp(Q.sum()))
+    return ans
+
+def model_W3(c, F, M):
+    Q = model_Q(c, F, M)
+    Q3 = model_Q3(c, F, M)
+    ans = c[0] * (Q3 * np.exp(Q)).sum()
+#    ans = c[0] * (Q3.sum() * np.exp(Q.sum()))
+    return ans
+
+
+
+def model_W1_s(c, F, M, ymax):
+    Q = model_Q_s(c, F, M, ymax)
+    Q1 = model_Q1(c, F, M)
+    ans = c[0] * (Q1 * np.exp(Q)).sum()
+#    ans = c[0] * (Q1.sum() * np.exp(Q.sum()))
+    return ans
+
+def model_W2_s(c, F, M, ymax):
+    Q = model_Q_s(c, F, M, ymax)
+    Q2 = model_Q2(c, F, M)
+    ans = c[0] * (Q2 * np.exp(Q)).sum()
+#    ans = c[0] * (Q2.sum() * np.exp(Q.sum()))
+    return ans
+
+def model_W3_s(c, F, M, ymax):
+    Q = model_Q_s(c, F, M, ymax)
+    Q3 = model_Q3(c, F, M)
+    ans = c[0] * (Q3 * np.exp(Q)).sum()
+#    ans = c[0] * (Q3.sum() * np.exp(Q.sum()))
+    return ans
+
     
+########################################
+# first we define the strain energy function
     
+def T_basis(F, M):
+    m = calc_m(F,M)
+    s = calc_s(F,M)
+    [np.array([m[0]*m[0], m[0]*m[1], m[1]*m[0], m[1]*m[1]]),
+     np.array([s[0]*s[0], m[0]*m[1], m[1]*m[0], m[1]*m[1]]),
+     np.array([ 2*m[0]*s[0], m[0]*s[1] + s[0]*m[1], m[1]*s[0] + s[1]*m[0], 2*m[1]*s[1] ]) * ( lambda_S(F,M) / lambda_M(F,M) )
+    ]
     
+def S_basis(F, M):
     
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
+    m = inv(tensor(F)).dot(calc_m(F,M))
+    s = inv(tensor(F)).dot(calc_s(F,M))
+    [np.array([m[0]*m[0], m[0]*m[1], m[1]*m[0], m[1]*m[1]]),
+     np.array([s[0]*s[0], m[0]*m[1], m[1]*m[0], m[1]*m[1]]),
+     np.array([ 2*m[0]*s[0], m[0]*s[1] + s[0]*m[1], m[1]*s[0] + s[1]*m[0], 2*m[1]*s[1] ]) * ( lambda_S(F,M) / lambda_M(F,M) )
+    ]
     
     
     
